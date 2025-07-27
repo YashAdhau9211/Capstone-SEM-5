@@ -1,0 +1,15 @@
+name: prompt2figma-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - fastapi
+  - uvicorn
+  - celery
+  - redis
+  - redis-py
+  - requests
+  - python-dotenv
+  - structlog
+  - pytest
+  - pytest-mock

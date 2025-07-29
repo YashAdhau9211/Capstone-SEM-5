@@ -1,0 +1,19 @@
+{
+  "name": "Prompt2Figma",
+  "id": "1532069507869016947",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "capabilities": [],
+  "enableProposedApi": false,
+  "documentAccess": "dynamic-page",
+  "editorType": [
+    "figma"
+  ],
+  "networkAccess": {
+    "allowedDomains": [
+      "http://localhost:8000"
+    ],
+    "reasoning": "This plugin needs to communicate with a local AI backend server to generate UI designs from natural language prompts. The backend processes prompts and returns structured component data that the plugin renders as Figma layers."
+  }
+}

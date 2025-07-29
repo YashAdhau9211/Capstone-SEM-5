@@ -1,0 +1,60 @@
+{
+  "name": "prompt2figma",
+  "version": "1.0.0",
+  "description": "AI-powered Figma plugin that generates UI designs from natural language prompts",
+  "main": "code.js",
+  "scripts": {
+    "build": "npm run build:ui && npm run build:code",
+    "build:ui": "vite build",
+    "build:code": "tsc -p tsconfig.json",
+    "dev": "npm run build:ui && npm run build:code && npm run watch",
+    "watch": "concurrently \"npm run watch:ui\" \"npm run watch:code\"",
+    "watch:ui": "vite build --watch",
+    "watch:code": "tsc -p tsconfig.json --watch",
+    "lint": "eslint --ext .ts,.tsx --ignore-pattern node_modules .",
+    "lint:fix": "eslint --ext .ts,.tsx --ignore-pattern node_modules --fix .",
+    "clean": "rm -rf dist code.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@figma/eslint-plugin-figma-plugins": "*",
+    "@figma/plugin-typings": "*",
+    "@types/react": "^19.1.9",
+    "@types/react-dom": "^19.1.7",
+    "@typescript-eslint/eslint-plugin": "^6.12.0",
+    "@typescript-eslint/parser": "^6.12.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.54.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.6",
+    "vite-plugin-singlefile": "^2.3.0"
+  },
+  "eslintConfig": {
+    "extends": [
+      "eslint:recommended",
+      "plugin:@typescript-eslint/recommended",
+      "plugin:@figma/figma-plugins/recommended"
+    ],
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+      "project": "./tsconfig.json"
+    },
+    "root": true,
+    "rules": {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          "argsIgnorePattern": "^_",
+          "varsIgnorePattern": "^_",
+          "caughtErrorsIgnorePattern": "^_"
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  }
+}

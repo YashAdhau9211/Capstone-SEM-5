@@ -1,26 +1,199 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import { PluginMessage, BackendResponse } from '../types';
+
+// Type definitions for UI messages
+interface PluginMessage {
+  type: string;
+  payload?: any;
+}
+
+interface FetchFromBackendMessage extends PluginMessage {
+  type: 'FETCH_FROM_BACKEND';
+  payload: {
+    endpoint: string;
+    body: any;
+  };
+}
+
+interface UpdateUIStatusMessage extends PluginMessage {
+  type: 'UPDATE_UI_STATUS';
+  payload: {
+    status: 'idle' | 'loading' | 'error';
+    message: string;
+  };
+}
+
+// Backend service for UI thread
+class BackendService {
+  private baseUrl: string = 'http://localhost:8000';
+  
+  async generateDesign(prompt: string): Promise<any> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/v1/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: prompt,
+          options: {
+            includeCode: true,
+            format: 'figma'
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return {
+        status: 'success',
+        data: data
+      };
+    } catch (error) {
+      console.error('Backend service error:', error);
+      return {
+        status: 'error',
+        data: {
+          error: {
+            message: error instanceof Error ? error.message : 'Unknown error occurred'
+          }
+        }
+      };
+    }
+  }
+
+  // For development/testing, return a sample response
+  async generateSampleDesign(prompt: string): Promise<any> {
+    console.log('Generating sample design for prompt:', prompt);
+    
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    return {
+      status: 'success',
+      data: {
+        result: {
+          code: JSON.stringify({
+            components: [
+              {
+                type: 'frame',
+                name: 'Sample UI',
+                width: 400,
+                height: 300,
+                x: 100,
+                y: 100,
+                fills: [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }],
+                strokes: [{ type: 'SOLID', color: { r: 0.8, g: 0.8, b: 0.8 } }],
+                strokeWeight: 1,
+                cornerRadius: 8,
+                layoutMode: 'VERTICAL',
+                primaryAxisSizingMode: 'AUTO',
+                counterAxisSizingMode: 'AUTO',
+                paddingLeft: 24,
+                paddingRight: 24,
+                paddingTop: 24,
+                paddingBottom: 24,
+                itemSpacing: 16,
+                children: [
+                  {
+                    type: 'text',
+                    name: 'Title',
+                    characters: 'Generated UI',
+                    fontSize: 24,
+                    fontName: { family: 'Inter', style: 'Bold' },
+                    textAlignHorizontal: 'CENTER',
+                    fills: [{ type: 'SOLID', color: { r: 0.1, g: 0.1, b: 0.1 } }]
+                  },
+                  {
+                    type: 'text',
+                    name: 'Description',
+                    characters: `Generated from: "${prompt}"`,
+                    fontSize: 14,
+                    fontName: { family: 'Inter', style: 'Regular' },
+                    textAlignHorizontal: 'CENTER',
+                    fills: [{ type: 'SOLID', color: { r: 0.6, g: 0.6, b: 0.6 } }]
+                  }
+                ]
+              }
+            ]
+          })
+        }
+      }
+    };
+  }
+}
 
 const App: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastResponse, setLastResponse] = useState<BackendResponse | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string>('');
+  
+  const backendService = new BackendService();
 
   useEffect(() => {
     // Listen for messages from the main thread
-    window.onmessage = (event) => {
+    window.onmessage = async (event) => {
       const message: PluginMessage = event.data.pluginMessage;
       
-      if (message.type === 'BACKEND_RESPONSE_RECEIVED') {
-        setIsLoading(false);
-        setLastResponse(message.payload);
+      if (message.type === 'UPDATE_UI_STATUS') {
+        const statusMsg = message as UpdateUIStatusMessage;
+        const { status, message: msg } = statusMsg.payload;
         
-        if (!message.payload.success) {
-          setError(message.payload.error || 'An error occurred');
+        setIsLoading(status === 'loading');
+        setStatusMessage(msg);
+        
+        if (status === 'error') {
+          setError(msg);
         } else {
           setError(null);
+        }
+      }
+      
+      if (message.type === 'FETCH_FROM_BACKEND') {
+        const fetchMsg = message as FetchFromBackendMessage;
+        const { body } = fetchMsg.payload;
+        
+        console.log('UI thread received fetch request:', body);
+        
+        try {
+          // For now, use sample response. Replace with real backend call when ready
+          const response = await backendService.generateSampleDesign(body.prompt);
+          
+          // Send the response back to the main thread
+          parent.postMessage(
+            {
+              pluginMessage: {
+                type: 'BACKEND_RESPONSE_RECEIVED',
+                payload: response
+              }
+            },
+            '*'
+          );
+          
+        } catch (error) {
+          console.error('Error in backend communication:', error);
+          
+          // Send error response back to main thread
+          parent.postMessage(
+            {
+              pluginMessage: {
+                type: 'BACKEND_RESPONSE_RECEIVED',
+                payload: {
+                  status: 'error',
+                  data: {
+                    error: {
+                      message: error instanceof Error ? error.message : 'Backend communication failed'
+                    }
+                  }
+                }
+              }
+            },
+            '*'
+          );
         }
       }
     };
@@ -32,6 +205,7 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     setError(null);
+    setStatusMessage('');
 
     // Send prompt to main thread
     parent.postMessage(
@@ -112,7 +286,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {lastResponse?.success && (
+      {statusMessage && !error && (
         <div style={{
           padding: '8px',
           backgroundColor: '#E8F5E8',
@@ -121,7 +295,7 @@ const App: React.FC = () => {
           marginBottom: '16px'
         }}>
           <p style={{ margin: '0', fontSize: '12px', color: '#2E7D32' }}>
-            Design generated successfully! Check your Figma canvas.
+            {statusMessage}
           </p>
         </div>
       )}

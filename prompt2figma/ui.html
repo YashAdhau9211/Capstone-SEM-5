@@ -1,41 +1,14 @@
+<!-- ui.html -->
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prompt2Figma</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-                sans-serif;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-        }
-        
-        #root {
-            width: 100%;
-            height: 100vh;
-        }
-        
-        /* Figma plugin specific styles */
-        * {
-            box-sizing: border-box;
-        }
-        
-        button {
-            font-family: inherit;
-        }
-        
-        textarea {
-            font-family: inherit;
-        }
-    </style>
-</head>
-<body>
+  </head>
+  <body>
     <div id="root"></div>
-    <script type="module" src="./dist/ui.js"></script>
-</body>
-</html> 
+    <!-- This path MUST start with /src to work correctly with Vite's dev server -->
+    <script type="module" src="/src/ui/main.tsx"></script>
+  </body>
+</html>

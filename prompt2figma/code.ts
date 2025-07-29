@@ -14,10 +14,11 @@ interface PromptSubmittedMessage extends PluginMessage {
   };
 }
 
-interface FetchFromBackendMessage extends PluginMessage {
-  type: 'FETCH_FROM_BACKEND';
-  payload: {
-    prompt: string;
+interface BackendResponsePayload {
+  status: 'success' | 'error';
+  data?: any;
+  error?: {
+    message: string;
   };
 }
 
@@ -272,64 +273,78 @@ figma.showUI(__html__, { width: 400, height: 600 });
 
 // Handle messages from the UI
 figma.ui.onmessage = async (message: PluginMessage) => {
-  console.log('Received message:', message);
+  console.log('Main thread received message:', message);
 
   switch (message.type) {
     case 'PROMPT_SUBMITTED':
       await handlePromptSubmitted(message as PromptSubmittedMessage);
       break;
       
-    case 'FETCH_FROM_BACKEND':
-      await handleFetchFromBackend(message as FetchFromBackendMessage);
+    case 'BACKEND_RESPONSE_RECEIVED':
+      await handleBackendResponse(message.payload as BackendResponsePayload);
       break;
       
     default:
-      console.warn('Unknown message type:', message.type);
+      console.warn('Unknown message type received in main thread:', message.type);
   }
 };
 
 /**
- * Handles when a prompt is submitted from the UI
+ * Handles the PROMPT_SUBMITTED message from the UI thread.
+ * Its ONLY job is to delegate the network call back to the UI thread.
  */
 async function handlePromptSubmitted(message: PromptSubmittedMessage): Promise<void> {
   const { prompt } = message.payload;
   
-  console.log('Processing prompt:', prompt);
+  console.log('Main thread received prompt. Delegating to UI for network request.');
   
-  // Delegate to UI thread for backend communication
+  // Tell the UI to update its status to "loading".
+  figma.ui.postMessage({
+    type: 'UPDATE_UI_STATUS',
+    payload: { status: 'loading', message: 'Generating...' }
+  });
+
+  // "Boomerang" the request back to the UI thread to perform the fetch.
   figma.ui.postMessage({
     type: 'FETCH_FROM_BACKEND',
-    payload: { prompt }
+    payload: {
+      endpoint: '/api/v1/generate', // The backend API endpoint
+      body: { prompt: prompt }
+    }
   });
 }
 
 /**
- * Handles the backend response and renders to canvas
+ * Handles the BACKEND_RESPONSE_RECEIVED message from the UI thread.
+ * Its ONLY job is to parse the response and render to the canvas.
  */
-async function handleBackendResponse(response: any): Promise<void> {
+async function handleBackendResponse(payload: BackendResponsePayload): Promise<void> {
+  if (payload.status === 'error') {
+    console.error('Backend returned an error:', payload.data);
+    figma.ui.postMessage({
+      type: 'UPDATE_UI_STATUS',
+      payload: { status: 'error', message: payload.data?.error?.message || 'An unknown error occurred.' }
+    });
+    return;
+  }
+  
   try {
-    if (!response.success) {
-      console.error('Backend request failed:', response.error);
-      figma.ui.postMessage({
-        type: 'BACKEND_RESPONSE_RECEIVED',
-        payload: {
-          success: false,
-          error: response.error || 'Backend request failed'
-        }
-      });
-      return;
-    }
-
-    const { components } = response.data;
+    // The backend's successful response is in payload.data.
+    // The actual JSON for rendering is inside payload.data.result.code
+    // Let's assume the final generated code is the result we need to render.
+    // This part may need adjustment based on the final backend response shape.
+    const resultObject = payload.data.result; // The result from Celery
+    const generatedCode = JSON.parse(resultObject.code); // The JSON from the validator
     
-    if (!components || !Array.isArray(components)) {
-      throw new Error('Invalid response format: missing components array');
+    // The `components` array for your renderer should be inside this object.
+    const componentsToRender = generatedCode.components; 
+    
+    if (!componentsToRender || !Array.isArray(componentsToRender)) {
+      throw new Error('Invalid data structure from backend: `components` array not found.');
     }
-
-    console.log('Rendering components:', components);
-
-    // Render components to canvas
-    const nodes = await canvasRenderer.renderComponents(components);
+    
+    console.log('Main thread received components. Starting render...');
+    const nodes = await canvasRenderer.renderComponents(componentsToRender);
     
     if (nodes.length > 0) {
       // Add nodes to current page
@@ -341,157 +356,20 @@ async function handleBackendResponse(response: any): Promise<void> {
       figma.currentPage.selection = nodes;
       figma.viewport.scrollAndZoomIntoView(nodes);
       
-      console.log(`Successfully rendered ${nodes.length} nodes`);
+      console.log(`Successfully rendered ${nodes.length} nodes.`);
     }
 
-    // Send success response back to UI
+    // Tell the UI that we are done.
     figma.ui.postMessage({
-      type: 'BACKEND_RESPONSE_RECEIVED',
-      payload: {
-        success: true,
-        data: response.data
-      }
+      type: 'UPDATE_UI_STATUS',
+      payload: { status: 'idle', message: 'Generation complete!' }
     });
-
-  } catch (error) {
-    console.error('Error rendering components:', error);
-    figma.ui.postMessage({
-      type: 'BACKEND_RESPONSE_RECEIVED',
-      payload: {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      }
-    });
-  }
-}
-
-/**
- * Handles backend communication (this would normally be done in UI thread)
- * For now, we'll simulate the backend response with a sample component
- */
-async function handleFetchFromBackend(message: FetchFromBackendMessage): Promise<void> {
-  const { prompt } = message.payload;
-  
-  console.log('Fetching from backend for prompt:', prompt);
-  
-  try {
-    // In a real implementation, this would be done in the UI thread
-    // For now, we'll create a sample response to test the rendering
-    const sampleResponse = {
-      success: true,
-      data: {
-        components: [
-          {
-            type: 'frame' as const,
-            name: 'Login Form',
-            width: 400,
-            height: 300,
-            x: 100,
-            y: 100,
-            fills: [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }],
-            strokes: [{ type: 'SOLID', color: { r: 0.8, g: 0.8, b: 0.8 } }],
-            strokeWeight: 1,
-            cornerRadius: 8,
-            layoutMode: 'VERTICAL' as const,
-            primaryAxisSizingMode: 'AUTO' as const,
-            counterAxisSizingMode: 'AUTO' as const,
-            paddingLeft: 24,
-            paddingRight: 24,
-            paddingTop: 24,
-            paddingBottom: 24,
-            itemSpacing: 16,
-            children: [
-              {
-                type: 'text' as const,
-                name: 'Title',
-                characters: 'Login',
-                fontSize: 24,
-                fontName: { family: 'Inter', style: 'Bold' },
-                textAlignHorizontal: 'CENTER' as const,
-                fills: [{ type: 'SOLID', color: { r: 0.1, g: 0.1, b: 0.1 } }]
-              },
-              {
-                type: 'frame' as const,
-                name: 'Email Field',
-                width: 352,
-                height: 48,
-                fills: [{ type: 'SOLID', color: { r: 0.98, g: 0.98, b: 0.98 } }],
-                strokes: [{ type: 'SOLID', color: { r: 0.8, g: 0.8, b: 0.8 } }],
-                strokeWeight: 1,
-                cornerRadius: 4,
-                children: [
-                  {
-                    type: 'text' as const,
-                    name: 'Email Placeholder',
-                    characters: 'Enter your email',
-                    fontSize: 14,
-                    fontName: { family: 'Inter', style: 'Regular' },
-                    fills: [{ type: 'SOLID', color: { r: 0.6, g: 0.6, b: 0.6 } }],
-                    x: 12,
-                    y: 14
-                  }
-                ]
-              },
-              {
-                type: 'frame' as const,
-                name: 'Password Field',
-                width: 352,
-                height: 48,
-                fills: [{ type: 'SOLID', color: { r: 0.98, g: 0.98, b: 0.98 } }],
-                strokeWeight: 1,
-                cornerRadius: 4,
-                children: [
-                  {
-                    type: 'text' as const,
-                    name: 'Password Placeholder',
-                    characters: 'Enter your password',
-                    fontSize: 14,
-                    fontName: { family: 'Inter', style: 'Regular' },
-                    fills: [{ type: 'SOLID', color: { r: 0.6, g: 0.6, b: 0.6 } }],
-                    x: 12,
-                    y: 14
-                  }
-                ]
-              },
-              {
-                type: 'frame' as const,
-                name: 'Login Button',
-                width: 352,
-                height: 48,
-                fills: [{ type: 'SOLID', color: { r: 0.094, g: 0.627, b: 0.984 } }],
-                cornerRadius: 4,
-                children: [
-                  {
-                    type: 'text' as const,
-                    name: 'Button Text',
-                    characters: 'Login',
-                    fontSize: 16,
-                    fontName: { family: 'Inter', style: 'Medium' },
-                    textAlignHorizontal: 'CENTER' as const,
-                    textAlignVertical: 'CENTER' as const,
-                    fills: [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }],
-                    x: 176,
-                    y: 14
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
-    };
-
-    // Process the response
-    await handleBackendResponse(sampleResponse);
     
   } catch (error) {
-    console.error('Error in backend communication:', error);
+    console.error('Error rendering components on canvas:', error);
     figma.ui.postMessage({
-      type: 'BACKEND_RESPONSE_RECEIVED',
-      payload: {
-        success: false,
-        error: error instanceof Error ? error.message : 'Backend communication failed'
-      }
+      type: 'UPDATE_UI_STATUS',
+      payload: { status: 'error', message: error instanceof Error ? error.message : 'Failed to render design.' }
     });
   }
 }
